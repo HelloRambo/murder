@@ -18,6 +18,7 @@
 # last parameter is the local ip address, normally 10.x.x.x
 
 import warnings
+from datetime import datetime
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 from BitTornado import PSYCO
@@ -56,6 +57,7 @@ except:
 
 doneFlag = None
 isPeer = False
+noPeerTime = None
 
 def ok_close_now():
   doneFlag.set()
@@ -90,7 +92,7 @@ class HeadlessDisplayer:
         self.errors = []
         self.last_update_time = -1
 
-    def finished(self):
+    def finished(self, noPeer=False):
         global doneFlag
 
         self.done = True
@@ -103,22 +105,22 @@ class HeadlessDisplayer:
 
         print "done and done"
 
-        if isPeer:
-          if os.fork():
-            os._exit(0)
-            return
+        if noPeer:
+            if os.fork():
+              os._exit(0)
+              return
 
-          os.setsid()
-          if os.fork():
-            os._exit(0)
-            return
+            os.setsid()
+            if os.fork():
+              os._exit(0)
+              return
 
-          os.close(0)
-          os.close(1)
-          os.close(2)
+            os.close(0)
+            os.close(1)
+            os.close(2)
 
-          t = threading.Timer(30.0, ok_close_now)
-          t.start()
+            t = threading.Timer(30.0, ok_close_now)
+            t.start()
 
     def failed(self):
         self.done = True
@@ -162,20 +164,40 @@ class HeadlessDisplayer:
            else:
               self.seedStatus = '%d seen recently, plus %.3f distributed copies' % (statistics.numOldSeeds,0.001*int(1000*statistics.numCopies))
            self.peerStatus = '%d seen now, %.1f%% done at %.1f kB/s' % (statistics.numPeers,statistics.percentDone,float(statistics.torrentRate) / (1 << 10))
-        #print '\n\n\n\n'
+           self.checkPeer(statistics.numPeers)
+               
+        print '\n\n\n\n'
         for err in self.errors:
             print 'ERROR:\n' + err + '\n'
-        #print 'saving:        ', self.file
-        #print 'percent done:  ', self.percentDone
-        #print 'time left:     ', self.timeEst
-        #print 'download to:   ', self.downloadTo
-        #print 'download rate: ', self.downRate
-        #print 'upload rate:   ', self.upRate
-        #print 'share rating:  ', self.shareRating
-        #print 'seed status:   ', self.seedStatus
-        #print 'peer status:   ', self.peerStatus
-        #stdout.flush()
+        print 'saving:        ', self.file
+        print 'percent done:  ', self.percentDone
+        print 'time left:     ', self.timeEst
+        print 'download to:   ', self.downloadTo
+        print 'download rate: ', self.downRate
+        print 'upload rate:   ', self.upRate
+        print 'share rating:  ', self.shareRating
+        print 'seed status:   ', self.seedStatus
+        print 'peer status:   ', self.peerStatus
+        stdout.flush()
         dpflag.set()
+
+    def checkPeer(self, numPeers):
+        global noPeerTime
+        if numPeers == 0:
+            if noPeerTime:
+                now = datetime.now()
+                seconds = (now - noPeerTime).seconds
+                print "seconds: ", seconds
+                global isPeer
+                if isPeer:
+                    self.finished(noPeer=True)
+                else:
+                    if seconds > 60:
+                        self.finished(noPeer=True)
+            else:
+                noPeerTime = datetime.now()
+        else:
+            noPeerTime = None
 
     def chooseFile(self, default, size, saveas, dir):
         self.file = '%s (%.1f MB)' % (default, float(size) / (1 << 20))
